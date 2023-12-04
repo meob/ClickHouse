@@ -404,11 +404,14 @@ private:
                 continue;
             }
 
+            bool is_any_nullable = false;
             Tuple args;
             args.reserve(equals_functions.size());
             /// first we create tuple from RHS of equals functions
             for (const auto & equals : equals_functions)
             {
+                is_any_nullable |= equals->getResultType()->isNullable();
+
                 const auto * equals_function = equals->as<FunctionNode>();
                 assert(equals_function && equals_function->getFunctionName() == "equals");
 
@@ -436,6 +439,12 @@ private:
 
             in_function->getArguments().getNodes() = std::move(in_arguments);
             in_function->resolveAsFunction(in_function_resolver);
+            /** For `k :: UInt8`, expression `k = 1 OR k = NULL` with result type Nullable(UInt8)
+              * is replaced with `k IN (1, NULL)` with result type UInt8.
+              * Convert it back to Nullable(UInt8).
+              */
+            if (is_any_nullable && !in_function->getResultType()->isNullable())
+                in_function->convertToNullable();
 
             or_operands.push_back(std::move(in_function));
         }
